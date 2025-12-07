@@ -28,7 +28,7 @@ const ActionLog = ({ logs: localLogs }: ActionLogProps) => {
               id: log._id,
               timestamp: new Date(log.timestamp).toLocaleTimeString(),
               message: `${log.action}: ${log.details}`,
-              type: 'info'
+              type: 'info' as const
             })).reverse(); 
             setDbLogs(formattedLogs);
           }

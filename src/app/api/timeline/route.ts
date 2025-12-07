@@ -18,7 +18,15 @@ export async function GET(req: Request) {
   // Fetch Logs (User actions)
   const logs = await AuditLog.find({}).sort({ timestamp: -1 }).limit(100);
 
-  const timelineEvents = [];
+  interface TimelineEvent {
+    id: string;
+    type: string;
+    source: string;
+    timestamp: string | Date;
+    details: string;
+  }
+
+  const timelineEvents: TimelineEvent[] = [];
 
   // Process Repos
   repos.forEach((repo: any) => {
