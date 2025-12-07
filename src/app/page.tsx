@@ -1,65 +1,517 @@
-import Image from "next/image";
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { useSession } from "next-auth/react";
+import { Github, Bookmark as BookmarkIcon } from 'lucide-react';
+import MenuBar from '@/components/MenuBar';
+import Toolbar from '@/components/Toolbar';
+import EvidenceTree from '@/components/EvidenceTree';
+import FileList from '@/components/FileList';
+import DataViewer from '@/components/DataViewer';
+import StatusBar from '@/components/StatusBar';
+import ActionLog from '@/components/ActionLog';
+import AddEvidenceModal from '@/components/AddEvidenceModal';
+import { portfolioData, FileSystemItem } from '@/lib/data';
 
 export default function Home() {
+  const { data: session } = useSession();
+  const [treeData, setTreeData] = useState<FileSystemItem[]>(portfolioData);
+  const [selectedTreeItem, setSelectedTreeItem] = useState<FileSystemItem | null>(portfolioData[0]);
+  const [selectedFileItem, setSelectedFileItem] = useState<FileSystemItem | null>(null);
+  const [fileListItems, setFileListItems] = useState<FileSystemItem[]>([]);
+  const [logs, setLogs] = useState<{id: number, timestamp: string, message: string}[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [specialMode, setSpecialMode] = useState<'timeline' | 'search' | null>(null);
+  const [specialData, setSpecialData] = useState<any>(null);
+  const [dashboardStats, setDashboardStats] = useState({
+    totalRepos: 0,
+    totalStars: 0,
+    languages: {} as Record<string, number>,
+    recentUpdate: ''
+  });
+  const [bookmarks, setBookmarks] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (session?.user) {
+      fetchBookmarks();
+    }
+  }, [session]);
+
+  const fetchBookmarks = async () => {
+    try {
+      const res = await fetch('/api/bookmarks');
+      const data = await res.json();
+      setBookmarks(data);
+      updateTreeWithBookmarks(data);
+    } catch (error) {
+      console.error("Failed to fetch bookmarks", error);
+    }
+  };
+
+  const updateTreeWithBookmarks = (currentBookmarks: any[]) => {
+    setTreeData(prev => {
+      const newTree = [...prev];
+      // Remove existing bookmarks folder if any
+      const filteredTree = newTree.filter(item => item.id !== 'bookmarks-folder');
+      
+      const bookmarkItems: FileSystemItem[] = currentBookmarks.map(b => ({
+        id: b.fileId, // Use original file ID to link back? Or unique ID?
+        // Actually we want to open the original item. 
+        // For simplicity, let's just recreate a simple item.
+        // Ideally we should find the original item in the full list, but we don't have it all loaded.
+        // Let's just store enough info in bookmark to display it.
+        name: b.fileName,
+        type: 'file', // Treat as file for now
+        icon: BookmarkIcon,
+        size: '-',
+        dateModified: new Date(b.createdAt).toISOString().split('T')[0]
+      }));
+
+      filteredTree.push({
+        id: 'bookmarks-folder',
+        name: 'My Case Files (Bookmarks)',
+        type: 'folder',
+        children: bookmarkItems,
+        icon: BookmarkIcon
+      });
+      
+      return filteredTree;
+    });
+  };
+
+  const handleToggleBookmark = async () => {
+    if (!selectedFileItem) return;
+    
+    const isBookmarked = bookmarks.some(b => b.fileId === selectedFileItem.id);
+    
+    if (isBookmarked) {
+      // Remove
+      const bookmark = bookmarks.find(b => b.fileId === selectedFileItem.id);
+      if (bookmark) {
+        await fetch(`/api/bookmarks/delete?id=${bookmark._id}`, {
+          method: 'DELETE'
+        });
+        addLog(`Removed bookmark: ${selectedFileItem.name}`);
+      }
+    } else {
+      // Add
+      await fetch('/api/bookmarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileId: selectedFileItem.id,
+          fileName: selectedFileItem.name,
+          filePath: 'N/A', // Placeholder
+          note: 'User bookmark'
+        })
+      });
+      addLog(`Added bookmark: ${selectedFileItem.name}`);
+    }
+    fetchBookmarks();
+  };
+
+  const handleSearch = async (query: string) => {
+    addLog(`User initiated search for: ${query}`);
+    setSpecialMode('search');
+    setSpecialData({ query, repos: [], logs: [] }); 
+    setSelectedFileItem(null);
+    
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      setSpecialData({ query, repos: data.repos, logs: data.logs });
+    } catch (error) {
+      console.error("Search failed", error);
+    }
+  };
+
+  const handleTimeline = async () => {
+    addLog(`User accessed Timeline Reconstruction`);
+    setSpecialMode('timeline');
+    setSpecialData([]); 
+    setSelectedFileItem(null);
+    
+    try {
+      const res = await fetch('/api/timeline');
+      const data = await res.json();
+      setSpecialData(data);
+    } catch (error) {
+      console.error("Timeline fetch failed", error);
+    }
+  };
+
+  const handleIntegrityCheck = async () => {
+    addLog(`User initiated Global Integrity Verification`);
+    try {
+      const res = await fetch('/api/integrity');
+      const data = await res.json();
+      
+      if (data.valid) {
+        alert(`[SYSTEM MESSAGE]\n\nINTEGRITY VERIFIED\n\nChain of Custody is intact.\nTotal Logs Verified: ${data.totalLogs}`);
+      } else {
+        alert(`[SYSTEM WARNING]\n\nINTEGRITY COMPROMISED\n\nChain broken at index: ${data.brokenAtIndex}\nPotential tampering detected.`);
+      }
+    } catch (error) {
+      console.error("Integrity check failed", error);
+    }
+  };
+
+  const addLog = (message: string) => {
+    const now = new Date();
+    const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+    setLogs(prev => [...prev, { id: Date.now(), timestamp, message }]);
+
+    // Persist to DB
+    fetch('/api/logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'USER_ACTION',
+        details: message
+      })
+    }).catch(err => console.error("Failed to save log", err));
+  };
+
+  const fetchRepos = async () => {
+    try {
+      const res = await fetch('/api/repos', { cache: 'no-store' });
+      const data = await res.json();
+      const repos = data.repos || [];
+      const currentIsAdmin = data.isAdmin;
+      setIsAdmin(currentIsAdmin);
+      
+      // Separate active and hidden repos
+      const activeRepos = repos.filter((r: any) => r.isVisible !== false);
+      const hiddenRepos = repos.filter((r: any) => r.isVisible === false);
+
+      const createRepoItem = (repo: any) => {
+        const date = new Date(repo.updatedAt);
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        const formattedDate = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+
+        // Format size (GitHub API returns size in KB)
+        let formattedSize = '-';
+        if (repo.size) {
+            if (repo.size >= 1024) {
+                formattedSize = `${(repo.size / 1024).toFixed(1)} MB`;
+            } else {
+                formattedSize = `${repo.size} KB`;
+            }
+        }
+
+        return {
+          id: repo._id,
+          name: repo.name,
+          type: 'repo',
+          icon: Github,
+          size: formattedSize,
+          dateModified: formattedDate,
+          repoInfo: {
+            url: repo.url,
+            homepage: repo.homepage,
+            language: repo.language,
+            stars: repo.stars,
+            description: repo.description,
+            longDescription: repo.longDescription,
+            features: repo.features,
+            teamInfo: repo.teamInfo
+          }
+        };
+      };
+
+      const activeRepoItems: FileSystemItem[] = activeRepos.map(createRepoItem);
+      const hiddenRepoItems: FileSystemItem[] = hiddenRepos.map(createRepoItem);
+
+      // Calculate Stats
+      const allRepos = [...activeRepos, ...hiddenRepos];
+      const stats = {
+        totalRepos: allRepos.length,
+        totalStars: allRepos.reduce((acc: number, r: any) => acc + (r.stars || 0), 0),
+        languages: allRepos.reduce((acc: any, r: any) => {
+          const lang = r.language || 'Unknown';
+          acc[lang] = (acc[lang] || 0) + 1;
+          return acc;
+        }, {}),
+        recentUpdate: allRepos.length > 0 ? new Date(Math.max(...allRepos.map((r: any) => new Date(r.updatedAt).getTime()))).toLocaleString() : '-'
+      };
+      setDashboardStats(stats);
+
+      // Update selectedFileItem if it exists and was updated
+      setSelectedFileItem(prev => {
+          if (!prev) return prev;
+          const updated = [...activeRepoItems, ...hiddenRepoItems].find(item => item.id === prev.id);
+          return updated || prev;
+      });
+
+      setTreeData(prevData => {
+        const findNode = (nodes: FileSystemItem[], id: string): FileSystemItem | undefined => {
+            for (const node of nodes) {
+                if (node.id === id) return node;
+                if (node.children) {
+                    const found = findNode(node.children, id);
+                    if (found) return found;
+                }
+            }
+            return undefined;
+        };
+
+        const updateNode = (nodes: FileSystemItem[]): FileSystemItem[] => {
+          return nodes.map(node => {
+            if (node.id === 'dev-folder') {
+               const originalDev = findNode(portfolioData, 'dev-folder');
+               const staticChildren = originalDev?.children || [];
+               
+               // Filter out static items if we have a dynamic record for them (whether active or hidden)
+               // This prevents duplicates if a repo is in Recycle Bin (hidden) but also exists as static data
+               const allRepoNames = new Set(repos.map((r: any) => r.name));
+               const filteredStatic = staticChildren.filter(child => !allRepoNames.has(child.name));
+
+               return {
+                 ...node,
+                 children: [...filteredStatic, ...activeRepoItems]
+               };
+            }
+            // Add Recycle Bin logic
+            if (node.id === 'root') {
+                const hasRecycleBin = node.children?.some(c => c.id === 'recycle-bin');
+                let newChildren = node.children ? updateNode(node.children) : [];
+                
+                if (currentIsAdmin) {
+                    if (!hasRecycleBin) {
+                        newChildren.push({
+                            id: 'recycle-bin',
+                            name: 'Recycle Bin',
+                            type: 'folder',
+                            children: hiddenRepoItems
+                        });
+                    } else {
+                        newChildren = newChildren.map(c => {
+                            if (c.id === 'recycle-bin') {
+                                return { ...c, children: hiddenRepoItems };
+                            }
+                            return c;
+                        });
+                    }
+                } else {
+                    newChildren = newChildren.filter(c => c.id !== 'recycle-bin');
+                }
+                return { ...node, children: newChildren };
+            }
+
+            if (node.children) {
+              return {
+                ...node,
+                children: updateNode(node.children)
+              };
+            }
+            return node;
+          });
+        };
+
+        return updateNode(prevData);
+      });
+      
+    } catch (error) {
+      console.error("Failed to fetch repos", error);
+    }
+  };
+
+  // Initial log and fetch
+  useEffect(() => {
+    addLog('System initialized. Ready for evidence acquisition.');
+    fetchRepos();
+  }, []);
+
+  // Update file list when tree selection changes
+  useEffect(() => {
+    if (selectedTreeItem) {
+      addLog(`User navigated to: ${selectedTreeItem.name}`);
+      if (selectedTreeItem.children) {
+        setFileListItems(selectedTreeItem.children);
+      } else {
+        setFileListItems([]);
+      }
+      
+      if (selectedTreeItem.type === 'file' || selectedTreeItem.type === 'repo') {
+        setSelectedFileItem(selectedTreeItem);
+      } else {
+        setSelectedFileItem(null);
+      }
+    }
+  }, [selectedTreeItem]);
+
+  const handleTreeSelect = (item: FileSystemItem) => {
+    setSelectedTreeItem(item);
+  };
+
+  const handleFileSelect = (item: FileSystemItem) => {
+    setSelectedFileItem(item);
+    addLog(`User viewed file: ${item.name}`);
+  };
+
+  const handleSync = async () => {
+    if (!session) {
+      addLog("Sync failed: Authentication required.");
+      return;
+    }
+    addLog("Syncing with GitHub...");
+    try {
+      const res = await fetch('/api/repos', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        addLog(data.message || "GitHub Sync Complete.");
+        fetchRepos();
+      } else {
+        addLog("GitHub Sync Failed: Unauthorized or Error.");
+      }
+    } catch (e) {
+      addLog("GitHub Sync Error.");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedFileItem) {
+        addLog("No item selected to delete.");
+        return;
+    }
+    if (selectedFileItem.type !== 'repo') {
+        addLog("Only repositories can be deleted.");
+        return;
+    }
+    
+    if (!confirm(`Delete repository ${selectedFileItem.name}?`)) return;
+
+    addLog(`Deleting repository: ${selectedFileItem.name}...`);
+    try {
+      const res = await fetch(`/api/repos/${selectedFileItem.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        addLog("Repository deleted (Moved to Recycle Bin).");
+        fetchRepos();
+        setSelectedFileItem(null);
+      } else {
+        const errData = await res.json();
+        addLog(`Delete failed: ${errData.error || "Unauthorized?"}`);
+      }
+    } catch (e) {
+      addLog("Delete error.");
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!selectedFileItem) {
+        addLog("No item selected to restore.");
+        return;
+    }
+    if (selectedFileItem.type !== 'repo') {
+        addLog("Only repositories can be restored.");
+        return;
+    }
+    
+    addLog(`Restoring repository: ${selectedFileItem.name}...`);
+    try {
+      const res = await fetch(`/api/repos/${selectedFileItem.id}`, { method: 'PATCH' });
+      if (res.ok) {
+        addLog("Repository restored.");
+        fetchRepos();
+        setSelectedFileItem(null);
+      } else {
+        addLog("Restore failed. Unauthorized?");
+      }
+    } catch (e) {
+      addLog("Restore error.");
+    }
+  };
+
+  const handleAddEvidence = (type: string) => {
+    setIsModalOpen(false);
+    let message = '';
+    switch (type) {
+      case 'physical':
+        message = 'Acquiring Physical Drive (Resume)... Download started.';
+        // Trigger download or open link here
+        window.open('/resume.pdf', '_blank'); // Placeholder
+        break;
+      case 'logical':
+        message = 'Mounting Logical Drive (GitHub)... Redirecting.';
+        window.open('https://github.com', '_blank');
+        break;
+      case 'image':
+        message = 'Loading Image File (LinkedIn)... Redirecting.';
+        window.open('https://linkedin.com', '_blank');
+        break;
+      case 'folder':
+        message = 'Accessing Folder Content (Email)... Opening mail client.';
+        window.location.href = 'mailto:minwoo@example.com';
+        break;
+    }
+    addLog(message);
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="flex flex-col h-screen w-screen bg-gray-200 overflow-hidden text-gray-900">
+      <MenuBar onIntegrityCheck={handleIntegrityCheck} />
+      <Toolbar 
+        onAddEvidence={() => setIsModalOpen(true)} 
+        onSync={handleSync}
+        onRemoveEvidence={handleDelete}
+        onRestore={handleRestore}
+        onSearch={handleSearch}
+        onTimeline={handleTimeline}
+      />
+      
+      <div className="flex-1 flex overflow-hidden p-1 space-x-1">
+        {/* Left Pane: Evidence Tree */}
+        <div className="w-1/4 min-w-[200px] flex flex-col">
+          <EvidenceTree 
+            data={treeData} 
+            onSelect={handleTreeSelect} 
+            selectedId={selectedTreeItem?.id || null} 
+          />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+        {/* Right Pane: Split View */}
+        <div className="flex-1 flex flex-col space-y-1 overflow-hidden">
+          {/* Top Right: File List */}
+          <div className="h-1/3 min-h-[100px]">
+            <FileList 
+              items={fileListItems} 
+              onSelect={handleFileSelect} 
+              selectedId={selectedFileItem?.id || null} 
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
+
+          {/* Middle Right: Data Viewer */}
+          <div className="flex-1 min-h-[100px]">
+            <DataViewer 
+              item={selectedFileItem} 
+              isAdmin={isAdmin} 
+              onUpdate={fetchRepos} 
+              dashboardStats={dashboardStats}
+              specialMode={specialMode}
+              specialData={specialData}
+              isBookmarked={selectedFileItem ? bookmarks.some(b => b.fileId === selectedFileItem.id) : false}
+              onToggleBookmark={handleToggleBookmark}
+            />
+          </div>
+
+          {/* Bottom Right: Action Log */}
+          <div className="h-32 min-h-[80px]">
+            <ActionLog logs={logs} />
+          </div>
         </div>
-      </main>
+      </div>
+
+      <StatusBar 
+        user={session?.user} 
+        isAdmin={isAdmin} 
+      />
+      
+      <AddEvidenceModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        onAdd={handleAddEvidence} 
+      />
     </div>
   );
 }
