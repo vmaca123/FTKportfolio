@@ -48,16 +48,16 @@ const Toolbar = ({ onAddEvidence, onRemoveEvidence, onSync, onRestore, onSearch,
   ];
 
   return (
-    <div className="bg-[#f0f0f0] border-b border-gray-400 p-1 flex items-center space-x-1">
+    <div className="bg-[#f0f0f0] border-b border-gray-400 p-1 flex items-center gap-1 overflow-x-auto whitespace-nowrap">
       {tools.map((tool, index) => {
         if (tool.type === 'separator') {
-          return <div key={index} className="w-[1px] h-5 bg-gray-400 mx-1" />;
+          return <div key={index} className="w-[1px] h-5 bg-gray-400 mx-1 shrink-0" />;
         }
         const Icon = tool.icon!;
         return (
           <button
             key={index}
-            className="p-1 hover:bg-gray-300 rounded border border-transparent hover:border-gray-400 active:bg-gray-400 active:border-gray-500"
+            className="p-1 hover:bg-gray-300 rounded border border-transparent hover:border-gray-400 active:bg-gray-400 active:border-gray-500 shrink-0"
             title={tool.label}
             onClick={tool.action}
           >
@@ -66,9 +66,9 @@ const Toolbar = ({ onAddEvidence, onRemoveEvidence, onSync, onRestore, onSearch,
         );
       })}
       
-      <div className="w-[1px] h-5 bg-gray-400 mx-1" />
+      <div className="w-[1px] h-5 bg-gray-400 mx-1 shrink-0" />
       
-      <form onSubmit={handleSearchSubmit} className="flex items-center bg-white border border-gray-300 rounded px-1 h-6">
+      <form onSubmit={handleSearchSubmit} className="flex items-center bg-white border border-gray-300 rounded px-1 h-6 shrink-0">
         <Search size={12} className="text-gray-500 mr-1" />
         <input 
           type="text" 

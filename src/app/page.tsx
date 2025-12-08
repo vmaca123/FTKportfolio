@@ -397,7 +397,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-gray-200 overflow-hidden text-gray-900">
+    <div className="flex flex-col h-screen w-full bg-gray-200 overflow-hidden text-gray-900">
       <MenuBar onIntegrityCheck={handleIntegrityCheck} />
       <Toolbar 
         onAddEvidence={() => setIsModalOpen(true)} 
@@ -408,9 +408,9 @@ export default function Home() {
         onTimeline={handleTimeline}
       />
       
-      <div className="flex-1 flex overflow-hidden p-1 space-x-1">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-1 gap-1">
         {/* Left Pane: Evidence Tree */}
-        <div className="w-1/4 min-w-[200px] flex flex-col">
+        <div className="w-full md:w-1/4 min-w-[200px] flex flex-col h-1/4 md:h-full">
           <EvidenceTree 
             data={treeData} 
             onSelect={handleTreeSelect} 
@@ -419,10 +419,10 @@ export default function Home() {
         </div>
 
         {/* Right Pane: Split View */}
-        <div className="flex-1 flex flex-col space-y-1 overflow-hidden">
+        <div className="flex-1 flex flex-col gap-1 overflow-hidden h-3/4 md:h-full">
           {/* Top Right: File List */}
           {(!specialMode && fileListItems.length > 0) && (
-            <div className="h-1/3 min-h-[100px]">
+            <div className="h-1/4 md:h-1/3 min-h-[100px]">
               <FileList 
                 items={fileListItems} 
                 onSelect={handleFileSelect} 
@@ -448,7 +448,7 @@ export default function Home() {
           </div>
 
           {/* Bottom Right: Action Log */}
-          <div className="h-32 min-h-[80px]">
+          <div className="h-24 md:h-32 min-h-[80px]">
             <ActionLog logs={logs} />
           </div>
         </div>

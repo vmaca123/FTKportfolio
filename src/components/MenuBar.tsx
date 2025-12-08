@@ -13,8 +13,8 @@ const MenuBar = ({ onIntegrityCheck }: MenuBarProps) => {
   const menus = ['File', 'View', 'Mode', 'Evidence', 'Help'];
 
   return (
-    <div className="bg-[#f0f0f0] border-b border-gray-400 flex justify-between items-center text-xs select-none">
-      <div className="flex">
+    <div className="bg-[#f0f0f0] border-b border-gray-400 flex justify-between items-center text-xs select-none overflow-x-auto whitespace-nowrap">
+      <div className="flex shrink-0">
         {menus.map((menu) => (
           <div
             key={menu}
@@ -24,7 +24,7 @@ const MenuBar = ({ onIntegrityCheck }: MenuBarProps) => {
           </div>
         ))}
       </div>
-      <div className="px-2 flex items-center gap-2">
+      <div className="px-2 flex items-center gap-2 shrink-0">
         {session && (
           <button 
             onClick={onIntegrityCheck}
