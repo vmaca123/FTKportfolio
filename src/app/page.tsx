@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSession } from "next-auth/react";
-import { Github, Bookmark as BookmarkIcon } from 'lucide-react';
+import { Github } from 'lucide-react';
 import MenuBar from '@/components/MenuBar';
 import Toolbar from '@/components/Toolbar';
 import EvidenceTree from '@/components/EvidenceTree';
@@ -11,6 +11,7 @@ import DataViewer from '@/components/DataViewer';
 import StatusBar from '@/components/StatusBar';
 import ActionLog from '@/components/ActionLog';
 import AddEvidenceModal from '@/components/AddEvidenceModal';
+import FileRecoveryTool from '@/components/FileRecoveryTool';
 import { portfolioData, FileSystemItem } from '@/lib/data';
 
 export default function Home() {
@@ -22,7 +23,7 @@ export default function Home() {
   const [logs, setLogs] = useState<{id: number, timestamp: string, message: string}[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [specialMode, setSpecialMode] = useState<'timeline' | 'search' | null>(null);
+  const [specialMode, setSpecialMode] = useState<'timeline' | 'search' | 'recovery' | null>(null);
   const [specialData, setSpecialData] = useState<any>(null);
   const [dashboardStats, setDashboardStats] = useState({
     totalRepos: 0,
@@ -30,86 +31,6 @@ export default function Home() {
     languages: {} as Record<string, number>,
     recentUpdate: ''
   });
-  const [bookmarks, setBookmarks] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (session?.user) {
-      fetchBookmarks();
-    }
-  }, [session]);
-
-  const fetchBookmarks = async () => {
-    try {
-      const res = await fetch('/api/bookmarks');
-      const data = await res.json();
-      setBookmarks(data);
-      updateTreeWithBookmarks(data);
-    } catch (error) {
-      console.error("Failed to fetch bookmarks", error);
-    }
-  };
-
-  const updateTreeWithBookmarks = (currentBookmarks: any[]) => {
-    setTreeData(prev => {
-      const newTree = [...prev];
-      // Remove existing bookmarks folder if any
-      const filteredTree = newTree.filter(item => item.id !== 'bookmarks-folder');
-      
-      const bookmarkItems: FileSystemItem[] = currentBookmarks.map(b => ({
-        id: b.fileId, // Use original file ID to link back? Or unique ID?
-        // Actually we want to open the original item. 
-        // For simplicity, let's just recreate a simple item.
-        // Ideally we should find the original item in the full list, but we don't have it all loaded.
-        // Let's just store enough info in bookmark to display it.
-        name: b.fileName,
-        type: 'file', // Treat as file for now
-        icon: BookmarkIcon,
-        size: '-',
-        dateModified: new Date(b.createdAt).toISOString().split('T')[0]
-      }));
-
-      filteredTree.push({
-        id: 'bookmarks-folder',
-        name: 'My Case Files (Bookmarks)',
-        type: 'folder',
-        children: bookmarkItems,
-        icon: BookmarkIcon
-      });
-      
-      return filteredTree;
-    });
-  };
-
-  const handleToggleBookmark = async () => {
-    if (!selectedFileItem) return;
-    
-    const isBookmarked = bookmarks.some(b => b.fileId === selectedFileItem.id);
-    
-    if (isBookmarked) {
-      // Remove
-      const bookmark = bookmarks.find(b => b.fileId === selectedFileItem.id);
-      if (bookmark) {
-        await fetch(`/api/bookmarks/delete?id=${bookmark._id}`, {
-          method: 'DELETE'
-        });
-        addLog(`Removed bookmark: ${selectedFileItem.name}`);
-      }
-    } else {
-      // Add
-      await fetch('/api/bookmarks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileId: selectedFileItem.id,
-          fileName: selectedFileItem.name,
-          filePath: 'N/A', // Placeholder
-          note: 'User bookmark'
-        })
-      });
-      addLog(`Added bookmark: ${selectedFileItem.name}`);
-    }
-    fetchBookmarks();
-  };
 
   const handleSearch = async (query: string) => {
     addLog(`User initiated search for: ${query}`);
@@ -139,6 +60,12 @@ export default function Home() {
     } catch (error) {
       console.error("Timeline fetch failed", error);
     }
+  };
+
+  const handleRecovery = () => {
+    addLog(`User accessed File Recovery Tool`);
+    setSpecialMode('recovery');
+    setSelectedFileItem(null);
   };
 
   const handleIntegrityCheck = async () => {
@@ -335,8 +262,21 @@ export default function Home() {
       
       if (selectedTreeItem.type === 'file' || selectedTreeItem.type === 'repo') {
         setSelectedFileItem(selectedTreeItem);
+        
+        // Check for recovery tool in tree selection
+        if (selectedTreeItem.id === 'tool-recovery') {
+          setSpecialMode('recovery');
+        } else {
+          if (specialMode === 'recovery') {
+            setSpecialMode(null);
+          }
+        }
       } else {
         setSelectedFileItem(null);
+        // Reset special mode if navigating away from the tool to a folder
+        if (specialMode === 'recovery') {
+            setSpecialMode(null);
+        }
       }
     }
   }, [selectedTreeItem]);
@@ -348,6 +288,14 @@ export default function Home() {
   const handleFileSelect = (item: FileSystemItem) => {
     setSelectedFileItem(item);
     addLog(`User viewed file: ${item.name}`);
+
+    if (item.id === 'tool-recovery') {
+      setSpecialMode('recovery');
+    } else {
+      if (specialMode === 'recovery') {
+        setSpecialMode(null);
+      }
+    }
   };
 
   const handleSync = async () => {
@@ -473,26 +421,30 @@ export default function Home() {
         {/* Right Pane: Split View */}
         <div className="flex-1 flex flex-col space-y-1 overflow-hidden">
           {/* Top Right: File List */}
-          <div className="h-1/3 min-h-[100px]">
-            <FileList 
-              items={fileListItems} 
-              onSelect={handleFileSelect} 
-              selectedId={selectedFileItem?.id || null} 
-            />
-          </div>
+          {(!specialMode && fileListItems.length > 0) && (
+            <div className="h-1/3 min-h-[100px]">
+              <FileList 
+                items={fileListItems} 
+                onSelect={handleFileSelect} 
+                selectedId={selectedFileItem?.id || null} 
+              />
+            </div>
+          )}
 
           {/* Middle Right: Data Viewer */}
           <div className="flex-1 min-h-[100px]">
-            <DataViewer 
-              item={selectedFileItem} 
-              isAdmin={isAdmin} 
-              onUpdate={fetchRepos} 
-              dashboardStats={dashboardStats}
-              specialMode={specialMode}
-              specialData={specialData}
-              isBookmarked={selectedFileItem ? bookmarks.some(b => b.fileId === selectedFileItem.id) : false}
-              onToggleBookmark={handleToggleBookmark}
-            />
+            {specialMode === 'recovery' ? (
+              <FileRecoveryTool />
+            ) : (
+              <DataViewer 
+                item={selectedFileItem} 
+                isAdmin={isAdmin} 
+                onUpdate={fetchRepos} 
+                dashboardStats={dashboardStats}
+                specialMode={specialMode as 'timeline' | 'search' | null}
+                specialData={specialData}
+              />
+            )}
           </div>
 
           {/* Bottom Right: Action Log */}

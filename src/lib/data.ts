@@ -202,6 +202,17 @@ export const portfolioData: FileSystemItem[] = [
             type: 'folder',
             children: [
               {
+                id: 'tool-recovery',
+                name: 'File_Recovery_Tool.exe',
+                type: 'file',
+                size: '12.5 MB',
+                dateModified: '2023-12-08 16:00:00',
+                icon: HardDrive,
+                contentType: 'binary',
+                hash: 'SHA256: RECOVERY-TOOL-V1',
+                content: 'LAUNCH_RECOVERY_TOOL'
+              },
+              {
                 id: 'proj-2',
                 name: 'Memory_Analyzer.py',
                 type: 'file',
