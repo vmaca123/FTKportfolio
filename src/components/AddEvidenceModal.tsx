@@ -19,7 +19,7 @@ const AddEvidenceModal = ({ isOpen, onClose, onAdd }: AddEvidenceModalProps) => 
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 font-sans text-xs">
-      <div className="bg-[#f0f0f0] border border-gray-400 shadow-xl w-96">
+      <div className="bg-[#f0f0f0] border border-gray-400 shadow-xl w-[90%] max-w-md">
         <div className="bg-gradient-to-r from-[#0078d7] to-[#005a9e] text-white px-2 py-1 flex justify-between items-center">
           <span>Add Evidence</span>
           <button onClick={onClose} className="hover:bg-white/20 rounded p-0.5">
