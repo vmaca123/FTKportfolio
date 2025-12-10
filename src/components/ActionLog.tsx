@@ -21,7 +21,12 @@ const ActionLog = ({ logs: localLogs }: ActionLogProps) => {
   useEffect(() => {
     if (session?.user) {
       fetch('/api/logs')
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            return [];
+          }
+          return res.json();
+        })
         .then(data => {
           if (Array.isArray(data)) {
             const formattedLogs = data.map((log: any) => ({
@@ -31,7 +36,13 @@ const ActionLog = ({ logs: localLogs }: ActionLogProps) => {
               type: 'info' as const
             })).reverse(); 
             setDbLogs(formattedLogs);
+          } else {
+            setDbLogs([]);
           }
+        })
+        .catch(err => {
+          console.error("Failed to fetch logs:", err);
+          setDbLogs([]);
         });
     }
   }, [session]);
